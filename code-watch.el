@@ -146,7 +146,12 @@
     (find-file source-path)
     (let ((right-window (split-window-right)))
       (select-window right-window)
-      (find-file note-path))))
+      (find-file note-path)
+      (when (= (buffer-size) 0)
+	(insert (format "# %s\n\n理解度: 0/5\n最終確認: %s\n\n<!-- ここにメモを書く -->\n\n# 役割\n# 構造\n# 疑問・気になった点"
+			file
+			(format-time-string "%Y-%m-%d"))))
+      (goto-char (point-min)))))
 
 ;;;###autoload
 (defun cw-show ()
@@ -249,6 +254,16 @@
          (arg (if n (format "--n=%d" (prefix-numeric-value n)) "--n=10"))
          (output (shell-command-to-string (format "cw top %s" arg))))
     (cw--display-output "*code-watch*" output)))
+
+;;;###autoload
+(defun cw-report (&optional n)
+  "cw report の結果を *code-watch-report* バッファに表示する。"
+  (interactive "P")
+  (let* ((root (cw--find-project-root))
+         (default-directory root)
+         (arg (if n (format "--n=%d" (prefix-numeric-value n)) "--n=10"))
+         (output (shell-command-to-string (format "cw report %s" arg))))
+    (cw--display-output "*code-watch-report*" output)))
 
 (provide 'code-watch)
 ;;; code-watch.el ends here
