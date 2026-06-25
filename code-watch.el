@@ -222,5 +222,15 @@
 
 (add-hook 'find-file-hook #'cw--auto-show-note)
 
+;;;###autoload
+(defun cw-show-top (&optional n)
+  "cw top の結果を *code-watch* バッファに表示する。"
+  (interactive "P")
+  (let* ((root (cw--find-project-root))
+         (default-directory root)
+         (arg (if n (format "--n=%d" (prefix-numeric-value n)) "--n=10"))
+         (output (shell-command-to-string (format "cw top %s" arg))))
+    (cw--display-output "*code-watch*" output)))
+
 (provide 'code-watch)
 ;;; code-watch.el ends here
