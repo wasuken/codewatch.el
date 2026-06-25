@@ -87,6 +87,24 @@
       (read-only-mode 1))
     (display-buffer buf)
     (let ((process (start-process "cw-scan" buf "cw" "scan")))
+      (set-process-filter
+       process
+       (lambda (proc string)
+         (when (buffer-live-p (process-buffer proc))
+           (with-current-buffer (process-buffer proc)
+             (let ((inhibit-read-only t))
+               (save-excursion
+                 (goto-char (process-mark proc))
+                 (let ((first t))
+                   (dolist (chunk (split-string string "\r"))
+                     (if first
+                         (setq first nil)
+                       (goto-char (line-beginning-position)))
+                     (when (not (string= chunk ""))
+                       (when (= (point) (line-beginning-position))
+                         (delete-region (point) (line-end-position)))
+                       (insert chunk)))
+                 (set-marker (process-mark proc) (point)))))))))
       (set-process-sentinel
        process
        (lambda (proc event)
