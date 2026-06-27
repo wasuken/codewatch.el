@@ -245,15 +245,121 @@
 
 (add-hook 'find-file-hook #'cw--auto-show-note)
 
+(defvar-local cw-top--offset 0
+  "Current offset in `cw-top-mode'.")
+
+(defvar-local cw-top--n 10
+  "Number of items per page in `cw-top-mode'.")
+
+(defun cw-top--has-items-p (output)
+  "Return non-nil if OUTPUT contains any file items."
+  (let ((lines (split-string output "\n" t))
+        (has-items nil))
+    (dolist (line lines)
+      (when (string-match "^[ \t]*[0-9]+\\.[ \t]+[0-9]+\\.[0-9]+" line)
+        (setq has-items t)))
+    has-items))
+
+(defun cw-top--refresh ()
+  "Refresh the `cw-top` buffer with the current offset and limit."
+  (let* ((root default-directory)
+         (n cw-top--n)
+         (offset cw-top--offset)
+         (cmd (format "cw top --n=%d --offset=%d" n offset))
+         (output (let ((default-directory root))
+                   (shell-command-to-string cmd))))
+    (if (and (> offset 0) (not (cw-top--has-items-p output)))
+        (progn
+          (message "No more files.")
+          nil)
+      (let ((inhibit-read-only t)
+            (page (+ (/ offset n) 1)))
+        (erase-buffer)
+        (insert (format "[Page %d / offset %d]\n" page offset))
+        (insert output)
+        (goto-char (point-min))
+        t))))
+
 ;;;###autoload
 (defun cw-show-top (&optional n)
   "cw top の結果を *code-watch* バッファに表示する。"
   (interactive "P")
   (let* ((root (cw--find-project-root))
-         (default-directory root)
-         (arg (if n (format "--n=%d" (prefix-numeric-value n)) "--n=10"))
-         (output (shell-command-to-string (format "cw top %s" arg))))
-    (cw--display-output "*code-watch*" output)))
+         (n-val (if n (prefix-numeric-value n) 10))
+         (buf (get-buffer-create "*code-watch*")))
+    (with-current-buffer buf
+      (cw-top-mode)
+      (setq-local default-directory root)
+      (setq cw-top--n n-val)
+      (setq cw-top--offset 0)
+      (cw-top--refresh))
+    (display-buffer buf)))
+
+(defun cw-top-next-page ()
+  "Go to the next page of top files."
+  (interactive)
+  (let ((old-offset cw-top--offset))
+    (setq cw-top--offset (+ cw-top--offset cw-top--n))
+    (unless (cw-top--refresh)
+      (setq cw-top--offset old-offset))))
+
+(defun cw-top-prev-page ()
+  "Go to the previous page of top files."
+  (interactive)
+  (if (<= cw-top--offset 0)
+      (message "Already at the first page.")
+    (let ((old-offset cw-top--offset))
+      (setq cw-top--offset (max 0 (- cw-top--offset cw-top--n)))
+      (unless (cw-top--refresh)
+        (setq cw-top--offset old-offset)))))
+
+(defvar cw-top-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'cw-top-open-file)
+    (define-key map (kbd "n") #'cw-top-next-page)
+    (define-key map (kbd "p") #'cw-top-prev-page)
+    map)
+  "Keymap for `cw-top-mode'.")
+
+(define-derived-mode cw-top-mode special-mode "cw-top"
+  "Major mode for displaying code-watch top results.")
+
+(defun cw-top-open-file ()
+  "Open the file on the current line in `cw-top-mode`."
+  (interactive)
+  (let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
+    (if (string-match "[0-9]+\\.[0-9]+[ \t]+\\([^ \t\n]+\\)[ \t]+(\\([^ \t\n]+\\)" line)
+        (let* ((file (match-string 1 line))
+               (root (cw--find-project-root))
+               (abs-path (expand-file-name file root)))
+          (if (file-exists-p abs-path)
+              (find-file abs-path)
+            (error "File does not exist: %s" abs-path)))
+      (message "No file path found on this line"))))
+
+;;;###autoload
+(defun cw-note-open ()
+  "現在開いているバッファのファイルに対応するノートを右側に開く。"
+  (interactive)
+  (unless buffer-file-name
+    (error "Current buffer is not visiting a file"))
+  (let* ((root (cw--find-project-root))
+         (file (file-relative-name buffer-file-name root))
+         (show-output (let ((default-directory root))
+                        (shell-command-to-string (format "cw show %s" (shell-quote-argument file)))))
+         (hash (cw--extract-hash show-output))
+         (note-dir (expand-file-name ".codewatch/notes" root))
+         (note-path (expand-file-name (format "%s.md" hash) note-dir)))
+    (unless (file-directory-p note-dir)
+      (make-directory note-dir t))
+    (let ((right-window (split-window-right)))
+      (select-window right-window)
+      (find-file note-path)
+      (when (= (buffer-size) 0)
+        (insert (format "# %s\n\n理解度: 0/5\n最終確認: %s\n\n<!-- ここにメモを書く -->\n\n# 役割\n# 構造\n# 疑問・気になった点"
+                        file
+                        (format-time-string "%Y-%m-%d"))))
+      (goto-char (point-min)))))
 
 ;;;###autoload
 (defun cw-report (&optional n)
