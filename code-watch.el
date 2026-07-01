@@ -42,9 +42,19 @@
         nil
       lines)))
 
-(defun cw--select-file ()
-  "Verticoでファイルを選択して返す。"
-  (let ((files (cw--get-file-list)))
+(defun cw--reorder-with-current (candidates)
+  "現在のバッファのファイルをCANDIDATESの先頭に移動する。"
+  (if-let* ((file (buffer-file-name))
+            (root (ignore-errors (cw--find-project-root)))
+            (rel (file-relative-name file root))
+            ((member rel candidates)))
+      (cons rel (delete rel candidates))
+    candidates))
+
+(defun cw--select-file (&optional candidates)
+  "Verticoでファイルを選択して返す。
+CANDIDATES が指定されていればそれを使用し、指定されていなければ `cw--get-file-list` から取得する。"
+  (let ((files (or candidates (cw--get-file-list))))
     (if (null files)
         (error "No files in code-watch index. Run M-x cw-scan first")
       (completing-read "File: " files nil t))))
@@ -133,7 +143,7 @@
 (defun cw-note ()
   "M-x cw-note: cw note <file> を実行し、ソースファイルとノートファイルを左右に並べて開く。"
   (interactive)
-  (let* ((file (cw--select-file))
+  (let* ((file (cw--select-file (cw--reorder-with-current (cw--get-file-list))))
          (root (cw--find-project-root))
          (source-path (expand-file-name file root))
          (show-output (let ((default-directory root))
